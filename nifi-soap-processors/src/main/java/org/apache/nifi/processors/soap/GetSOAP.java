@@ -26,30 +26,36 @@ import org.apache.axis2.addressing.EndpointReference;
 import org.apache.axis2.client.Options;
 import org.apache.axis2.client.ServiceClient;
 import org.apache.axis2.transport.http.HTTPConstants;
-import org.apache.nifi.annotation.behavior.*;
+import org.apache.nifi.annotation.behavior.DynamicProperty;
+import org.apache.nifi.annotation.behavior.InputRequirement;
+import org.apache.nifi.annotation.behavior.SupportsBatching;
+import org.apache.nifi.annotation.behavior.WritesAttribute;
+import org.apache.nifi.annotation.documentation.CapabilityDescription;
+import org.apache.nifi.annotation.documentation.Tags;
+import org.apache.nifi.annotation.lifecycle.OnScheduled;
 import org.apache.nifi.annotation.lifecycle.OnStopped;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.flowfile.attributes.CoreAttributes;
+import org.apache.nifi.logging.ProcessorLog;
 import org.apache.nifi.processor.*;
-import org.apache.nifi.annotation.lifecycle.OnScheduled;
-import org.apache.nifi.annotation.documentation.CapabilityDescription;
-import org.apache.nifi.annotation.documentation.Tags;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.io.OutputStreamCallback;
 import org.apache.nifi.processor.util.StandardValidators;
+import org.apache.nifi.util.StopWatch;
 
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.*;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
 @SupportsBatching
 @InputRequirement(InputRequirement.Requirement.INPUT_FORBIDDEN)
 @Tags({"SOAP", "Get", "Ingest", "Ingress"})
-@CapabilityDescription("Provide a description")
+@CapabilityDescription("Execute provided request against the SOAP endpoint. The result will be left in it's orginal form. " +
+        "This processor can be scheduled to run on a timer, or cron expression, using the standard scheduling methods, " +
+        "or it can be triggered by an incoming FlowFile. If it is triggered by an incoming FlowFile, then attributes of " +
+        "that FlowFile will be available when evaluating the executing the SOAP request.")
 @WritesAttribute(attribute = "mime.type", description = "Sets mime type to text/xml")
 @DynamicProperty(name = "The name of a input parameter the needs to be passed to the SOAP method being invoked.",
         value = "The value for this parameter '=' and ',' are not considered valid values and must be escpaed . Note, if the value of parameter needs to be an array the format should be key1=value1,key2=value2.  ",
@@ -61,7 +67,7 @@ import java.util.concurrent.TimeoutException;
 public class GetSOAP extends AbstractProcessor {
 
 
-    private static final PropertyDescriptor ENDPOINT_URL = new PropertyDescriptor
+    protected static final PropertyDescriptor ENDPOINT_URL = new PropertyDescriptor
             .Builder()
             .name("Endpoint URL")
             .description("The endpoint url that hosts the web service(s) that should be called.")
@@ -70,7 +76,7 @@ public class GetSOAP extends AbstractProcessor {
             .addValidator(StandardValidators.URL_VALIDATOR)
             .build();
 
-    private static final PropertyDescriptor WSDL_URL = new PropertyDescriptor
+    protected static final PropertyDescriptor WSDL_URL = new PropertyDescriptor
             .Builder()
             .name("WSDL URL")
             .description("The url where the wsdl file can be retrieved and referenced.")
@@ -79,7 +85,7 @@ public class GetSOAP extends AbstractProcessor {
             .addValidator(StandardValidators.URL_VALIDATOR)
             .build();
 
-    private static final PropertyDescriptor METHOD_NAME = new PropertyDescriptor
+    protected static final PropertyDescriptor METHOD_NAME = new PropertyDescriptor
             .Builder()
             .name("SOAP Method Name")
             .description("The method exposed by the SOAP webservice that should be invoked.")
@@ -88,7 +94,7 @@ public class GetSOAP extends AbstractProcessor {
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .build();
 
-    private static final PropertyDescriptor USER_NAME = new PropertyDescriptor
+    protected static final PropertyDescriptor USER_NAME = new PropertyDescriptor
             .Builder()
             .name("User name")
             .description("The username to use in the case of basic Auth")
@@ -97,7 +103,7 @@ public class GetSOAP extends AbstractProcessor {
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .build();
 
-    private static final PropertyDescriptor PASSWORD = new PropertyDescriptor
+    protected static final PropertyDescriptor PASSWORD = new PropertyDescriptor
             .Builder()
             .name("Password")
             .sensitive(true)
@@ -108,7 +114,7 @@ public class GetSOAP extends AbstractProcessor {
             .build();
 
 
-    private static final PropertyDescriptor USER_AGENT = new PropertyDescriptor
+    protected static final PropertyDescriptor USER_AGENT = new PropertyDescriptor
             .Builder()
             .name("User Agent")
             .sensitive(true)
@@ -119,7 +125,7 @@ public class GetSOAP extends AbstractProcessor {
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .build();
 
-    private static final PropertyDescriptor SO_TIMEOUT = new PropertyDescriptor
+    protected static final PropertyDescriptor SO_TIMEOUT = new PropertyDescriptor
             .Builder()
             .name("Socket Timeout")
             .defaultValue("60000")
@@ -129,7 +135,7 @@ public class GetSOAP extends AbstractProcessor {
             .addValidator(StandardValidators.POSITIVE_INTEGER_VALIDATOR)
             .build();
 
-    private static final PropertyDescriptor CONNECTION_TIMEOUT = new PropertyDescriptor
+    protected static final PropertyDescriptor CONNECTION_TIMEOUT = new PropertyDescriptor
             .Builder()
             .name("Connection Timeout")
             .defaultValue("60000")
@@ -140,10 +146,11 @@ public class GetSOAP extends AbstractProcessor {
             .build();
 
 
-    private static final Relationship REL_SUCCESS = new Relationship.Builder()
+    public static final Relationship REL_SUCCESS = new Relationship.Builder()
             .name("success")
             .description("All FlowFiles that are created are routed to this relationship")
             .build();
+
 
     private List<PropertyDescriptor> descriptors;
 
@@ -207,7 +214,7 @@ public class GetSOAP extends AbstractProcessor {
         //get the username and password -- they both must be populated.
         final String userName = context.getProperty(USER_NAME).getValue();
         final String password = context.getProperty(PASSWORD).getValue();
-        if (null != userName && null != password && !userName.isEmpty() && !password.isEmpty()){
+        if (null != userName && null != password && !userName.isEmpty() && !password.isEmpty()) {
             options.setUserName(userName);
             options.setPassword(password);
         }
@@ -234,53 +241,72 @@ public class GetSOAP extends AbstractProcessor {
     @Override
     public void onTrigger(final ProcessContext context, final ProcessSession session) throws ProcessException {
 
-
+        final StopWatch stopWatch = new StopWatch(true);
         //get the dynamic properties, execute the call and return the results
         OMFactory fac = OMAbstractFactory.getOMFactory();
-        OMNamespace omNamespace = fac.createOMNamespace(
-                context.getProperty(WSDL_URL).getValue(), "nifi");
+        OMNamespace omNamespace = fac.createOMNamespace(context.getProperty(WSDL_URL).getValue(), "nifi");
 
-        final OMElement method = fac.createOMElement(context.getProperty(METHOD_NAME).getValue(), omNamespace);
+        final OMElement method = getSoapMethod(fac, omNamespace, context.getProperty(METHOD_NAME).getValue());
 
         //now we need to walk the arguments and add them
+        addArgumentsToMethod(context, fac, omNamespace, method);
+        final OMElement result = executeSoapMethod(method);
+        final FlowFile flowFile = processSoapRequest(session, result);
+        session.transfer(flowFile, REL_SUCCESS);
 
+    }
+
+    FlowFile processSoapRequest(ProcessSession session, final OMElement result) {
+
+        FlowFile intermediateFlowFile = session.create();
+
+        intermediateFlowFile = session.write(intermediateFlowFile, new OutputStreamCallback() {
+            @Override
+            public void process(final OutputStream out) throws IOException {
+                try {
+                    String response = result.getFirstElement().getText();
+                    out.write(response.getBytes());
+                } catch (AxisFault axisFault) {
+                    final ProcessorLog logger = getLogger();
+                    if (null != logger)
+                        logger.error("Failed parsing the data that came back from the web service method", axisFault);
+                    throw new ProcessException(axisFault);
+                }
+            }
+        });
+
+        final Map<String, String> attributes = new HashMap<>();
+        attributes.put(CoreAttributes.MIME_TYPE.key(), "application/xml");
+        return session.putAllAttributes(intermediateFlowFile, attributes);
+    }
+
+    OMElement executeSoapMethod(OMElement method) {
+        try {
+            return serviceClient.sendReceive(method);
+        } catch (AxisFault axisFault) {
+            final ProcessorLog logger = getLogger();
+            if (null != logger)
+                logger.error("Failed invoking the web service method", axisFault);
+            throw new ProcessException(axisFault);
+        }
+    }
+
+    void addArgumentsToMethod(ProcessContext context, OMFactory fac, OMNamespace omNamespace, OMElement method) {
+        final ProcessorLog logger = getLogger();
         for (final Map.Entry<PropertyDescriptor, String> entry : context.getProperties().entrySet()) {
             PropertyDescriptor descriptor = entry.getKey();
             if (descriptor.isDynamic()) {
-                getLogger().debug("Processing dynamic property: " + descriptor.getName() + " with value: " + entry.getValue());
-                OMElement value = fac.createOMElement(descriptor.getName(), omNamespace);
+                if (null != logger)
+                    logger.debug("Processing dynamic property: " + descriptor.getName() + " with value: " + entry.getValue());
+                OMElement value = getSoapMethod(fac, omNamespace, descriptor.getName());
                 value.addChild(fac.createOMText(value, entry.getValue()));
                 method.addChild(value);
             }
         }
+    }
 
-
-        try {
-            final OMElement result = serviceClient.sendReceive(method);
-            FlowFile flowFile = session.create();
-
-            flowFile = session.write(flowFile, new OutputStreamCallback() {
-                @Override
-                public void process(final OutputStream out) throws IOException {
-                    try {
-                        String response = result.getFirstElement().getText();
-                        out.write(response.getBytes());
-                    } catch (AxisFault axisFault) {
-                        getLogger().error("Failed invoking the web service method", axisFault);
-                        throw new ProcessException(axisFault);
-                    }
-                }
-            });
-
-            final Map<String, String> attributes = new HashMap<>();
-            attributes.put(CoreAttributes.MIME_TYPE.key(), "application/json");
-            flowFile = session.putAllAttributes(flowFile, attributes);
-            session.transfer(flowFile, REL_SUCCESS);
-
-        } catch (AxisFault axisFault) {
-            getLogger().error("Failed invoking the web service method", axisFault);
-            throw new ProcessException(axisFault);
-        }
+    OMElement getSoapMethod(OMFactory fac, OMNamespace omNamespace, String value) {
+        return fac.createOMElement(value, omNamespace);
     }
 
     private static boolean isHTTPS(final String url) {
