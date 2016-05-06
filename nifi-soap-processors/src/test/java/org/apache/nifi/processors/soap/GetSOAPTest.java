@@ -149,7 +149,7 @@ public class GetSOAPTest {
     }
 
     @Test
-    public void testHTTPNoUsernamePasswordProcessor() throws IOException {
+    public void testHTTPUsernamePasswordProcessor() throws IOException {
 
 
 
@@ -190,7 +190,7 @@ public class GetSOAPTest {
 
 
     }
-   
+
     @Test
     public void testHTTPWithUsernamePasswordProcessor() throws IOException {
 
@@ -219,6 +219,30 @@ public class GetSOAPTest {
         testRunner.setProperty(GetSOAP.PASSWORD,"password");
 
 
+        testRunner.run();
+
+        final Relationship REL_SUCCESS = new Relationship.Builder()
+                .name("success")
+                .description("All FlowFiles that are created are routed to this relationship")
+                .build();
+        testRunner.assertAllFlowFilesTransferred(REL_SUCCESS,1);
+        List<MockFlowFile> flowFileList = testRunner.getFlowFilesForRelationship(REL_SUCCESS);
+        assert(null != flowFileList);
+
+        final String expectedBody = "<?xml version='1.0'?><dwml version='1.0' xmlns:xsd='http://www.w3.org/2001/XMLSchema' xmlns:xsi='http://www.w3.org/2001/XMLSchema-instance' xsi:noNamespaceSchemaLocation='http://graphical.weather.gov/xml/DWMLgen/schema/DWML.xsd'><latLonList>35.9153,-79.0838</latLonList></dwml>";
+        flowFileList.get(0).assertContentEquals(expectedBody.getBytes());
+
+
+    }
+
+    @Test
+    public void testGeoServiceHTTPWithArgumentsProcessor() throws IOException {
+
+
+        testRunner.setProperty(GetSOAP.ENDPOINT_URL,"http://graphical.weather.gov/xml/SOAP_server/ndfdXMLserver.php");
+        testRunner.setProperty(GetSOAP.WSDL_URL,"http://graphical.weather.gov/xml/DWMLgen/wsdl/ndfdXML.wsdl");
+        testRunner.setProperty(GetSOAP.METHOD_NAME,"LatLonListZipCode");
+        testRunner.setProperty("zipCodeList","27510");
         testRunner.run();
 
         final Relationship REL_SUCCESS = new Relationship.Builder()

@@ -25,7 +25,9 @@ import org.apache.axis2.Constants;
 import org.apache.axis2.addressing.EndpointReference;
 import org.apache.axis2.client.Options;
 import org.apache.axis2.client.ServiceClient;
+
 import org.apache.axis2.transport.http.HTTPConstants;
+import org.apache.axis2.transport.http.impl.httpclient3.HttpTransportPropertiesImpl;
 import org.apache.nifi.annotation.behavior.DynamicProperty;
 import org.apache.nifi.annotation.behavior.InputRequirement;
 import org.apache.nifi.annotation.behavior.SupportsBatching;
@@ -212,11 +214,16 @@ public class GetSOAP extends AbstractProcessor {
         options.setProperty(HTTPConstants.SO_TIMEOUT, context.getProperty(SO_TIMEOUT).asInteger());
         options.setProperty(HTTPConstants.CONNECTION_TIMEOUT, context.getProperty(CONNECTION_TIMEOUT).asInteger());
         //get the username and password -- they both must be populated.
+
         final String userName = context.getProperty(USER_NAME).getValue();
         final String password = context.getProperty(PASSWORD).getValue();
         if (null != userName && null != password && !userName.isEmpty() && !password.isEmpty()) {
-            options.setUserName(userName);
-            options.setPassword(password);
+
+            HttpTransportPropertiesImpl.Authenticator
+                    auth = new HttpTransportPropertiesImpl.Authenticator();
+            auth.setUsername(userName);
+            auth.setPassword(password);
+            options.setProperty(org.apache.axis2.transport.http.HTTPConstants.AUTHENTICATE, auth);
         }
         try {
             serviceClient = new ServiceClient();
