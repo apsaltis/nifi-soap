@@ -99,6 +99,7 @@ public class GetSOAP extends AbstractProcessor {
     protected static final PropertyDescriptor USER_NAME = new PropertyDescriptor
             .Builder()
             .name("User name")
+            .sensitive(true)
             .description("The username to use in the case of basic Auth")
             .required(false)
             .expressionLanguageSupported(false)
@@ -119,7 +120,6 @@ public class GetSOAP extends AbstractProcessor {
     protected static final PropertyDescriptor USER_AGENT = new PropertyDescriptor
             .Builder()
             .name("User Agent")
-            .sensitive(true)
             .defaultValue("NiFi SOAP Processor")
             .description("The user agent string to use, the default is Nifi SOAP Processor")
             .required(false)
