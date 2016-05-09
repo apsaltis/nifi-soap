@@ -236,6 +236,7 @@ public class GetSOAPTest {
     }
 
     @Test
+    @Ignore
     public void testGeoServiceHTTPWithArgumentsProcessor() throws IOException {
 
 
