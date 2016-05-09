@@ -6,10 +6,10 @@ NiFi provenance reporting tasks.
 
 - [Installation](#installation)
 - [Configuration](#configuration)
-    - [Required Properties](# Required Properties to configure)
-    - [Configure Basic Auth](#Required Properties to configure for Basic Auth)
-    - [Optional Properties](#Optional Properties)
-    - [Adding Method Arguments](#Adding Method Arguments)
+    - [Required Properties]
+    - [Configure Basic Auth]
+    - [Optional Properties]
+    - [Adding Method Arguments]
 - [Todo](#todo)
 
 ## Installation
