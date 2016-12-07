@@ -39,17 +39,20 @@ import org.apache.nifi.annotation.lifecycle.OnStopped;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.flowfile.attributes.CoreAttributes;
-import org.apache.nifi.logging.ProcessorLog;
-import org.apache.nifi.processor.*;
+import org.apache.nifi.logging.ComponentLog;
+import org.apache.nifi.processor.AbstractProcessor;
+import org.apache.nifi.processor.ProcessContext;
+import org.apache.nifi.processor.ProcessSession;
+import org.apache.nifi.processor.ProcessorInitializationContext;
+import org.apache.nifi.processor.Relationship;
 import org.apache.nifi.processor.exception.ProcessException;
 import org.apache.nifi.processor.io.OutputStreamCallback;
 import org.apache.nifi.processor.util.StandardValidators;
 import org.apache.nifi.util.StopWatch;
-
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.*;
-import java.util.concurrent.TimeUnit;
+
 
 @SupportsBatching
 @InputRequirement(InputRequirement.Requirement.INPUT_FORBIDDEN)
@@ -274,7 +277,7 @@ public class GetSOAP extends AbstractProcessor {
                     String response = result.getFirstElement().getText();
                     out.write(response.getBytes());
                 } catch (AxisFault axisFault) {
-                    final ProcessorLog logger = getLogger();
+                    final ComponentLog logger = getLogger();
                     if (null != logger)
                         logger.error("Failed parsing the data that came back from the web service method", axisFault);
                     throw new ProcessException(axisFault);
@@ -291,7 +294,7 @@ public class GetSOAP extends AbstractProcessor {
         try {
             return serviceClient.sendReceive(method);
         } catch (AxisFault axisFault) {
-            final ProcessorLog logger = getLogger();
+            final ComponentLog logger = getLogger();
             if (null != logger)
                 logger.error("Failed invoking the web service method", axisFault);
             throw new ProcessException(axisFault);
@@ -299,7 +302,7 @@ public class GetSOAP extends AbstractProcessor {
     }
 
     void addArgumentsToMethod(ProcessContext context, OMFactory fac, OMNamespace omNamespace, OMElement method) {
-        final ProcessorLog logger = getLogger();
+        final ComponentLog logger = getLogger();
         for (final Map.Entry<PropertyDescriptor, String> entry : context.getProperties().entrySet()) {
             PropertyDescriptor descriptor = entry.getKey();
             if (descriptor.isDynamic()) {
